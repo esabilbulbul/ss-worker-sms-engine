@@ -20,17 +20,17 @@ import jaxesa.log.LogManager;
  *
  * @author Administrator
  */
-public class SMSOps {
+public class SMSAhsuOps {
     
     private static final Pattern MESSAGE_ID = Pattern.compile("(?i)ID\\s*:\\s*(\\d+)");
     
     private final SmsClient client;
     
-    public SMSOps(SmsConfig config) {
+    public SMSAhsuOps(SmsConfig config) {
         this.client = new SmsClient(config);
     }
     
-    public SMSOps(String username, String password, String sender, int action) {
+    public SMSAhsuOps(String username, String password, String sender, int action) {
             this(SmsConfig.builder()
                 .username(username)
                 .password(password)
@@ -39,9 +39,9 @@ public class SMSOps {
                 .build());
     }
     
-    public static SMSOps createDefault() {
+    public static SMSAhsuOps createDefault() {
         
-        return new SMSOps("5334770727", "5334770727", "BULBULLER", 12);
+        return new SMSAhsuOps("5334770727", "5334770727", "BULBULLER", 12);
     }
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     //                  SMS GONDERIM

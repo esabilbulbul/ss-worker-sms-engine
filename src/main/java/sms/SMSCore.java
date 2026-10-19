@@ -12,10 +12,13 @@ import com.bulbullers.sms.SmsResponse;
 //
 
 import java.io.File;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import jaxesa.log.LogManager;
 import jaxesa.persistence.EntityManager;
+import jaxesa.persistence.Query;
 import jaxesa.redis.ssoRedisLettuce;
+import jaxesa.sms.smsUtil;
 import jaxesa.util.Util;
 import misc.ftp.core;
 import redis.clients.jedis.Jedis;
@@ -25,6 +28,8 @@ import ss.app.importing.ImportOps;
 import ss.app.prm.ParamOps;
 import ss.app.prm.ssoPath;
 import ss.app.sse.SSEOps;
+import ss.sms.ssSMSCommon;
+import ss.sms.ssoSMSRequest;
 import thread.worker.jeiWorkerInterface;
 import thread.worker.ssoThreadSettings;
 
@@ -102,8 +107,7 @@ public class SMSCore implements jeiWorkerInterface {
             // false);
             // newFile = Util.Redis.JLists.pop(lettuce, sQueueName,
             // ssoFileImportRequest.class, false);
-            ssoTextMessageRequest newSMSRequest = Util.Redis.JLists.pop(lettuce, sQueueName,
-                    ssoTextMessageRequest.class, false);
+            ssoSMSRequest newSMSRequest = Util.Redis.JLists.pop(lettuce, sQueueName,ssoSMSRequest.class, false);
             if (newSMSRequest != null) {
 
                 // ---------------------------------------------------------------------
@@ -119,23 +123,165 @@ public class SMSCore implements jeiWorkerInterface {
                 sActiveToken = newFile.token;
 
                 // DO JOB HERE
+                // 0. Verify the Content
+                
+                
+                // 1. READ NUMBERS + CONTENT
+                // 2. PREPARE REQUEST WITH THE WANTED NUMBERS 
+                //      2.1 Prepare Phone Numbers for given number of phones
+                // 3. SEND IT TO SMS PROVIDER GATE
+                // 4. READ MESSAGE ID FROM RESPONSE OF SMS PROVIDER 
+                // 5. Write to Ledger
+                // 6. UPDATE SMS CREDIT
+                // 7. ADD to History
 
-                String sJSNumber = newSMSRequest.numbers;
+                String sJSNumber = newSMSRequest.phoneNumbers;
                 String sContent = newSMSRequest.content;
                 
-                SMSOps smsOps = SMSOps.createDefault(); // SMS
+                boolean bSourceVerified = smsUtil.verifySMSSignature(sJSNumber, newSMSRequest.hash);
                 
-                org.json.JSONArray jsanNumbers = new org.json.JSONArray(sJSNumber); // Parse
-                
-                smsOps.sendBulkSMS(jsanNumbers, sContent); // Sending SMS
-                
-                long credits = smsOps.getCredits();
-                
-                java.util.List<String> originators = smsOps.getOriginators();
-                
-                java.util.List<com.bulbullers.sms.DeliveryReport> reports = smsOps.getReport("8297311291");
-                
-                
+                //if(bSourceVerified==true)
+                if(true)
+                {
+                    SMSAhsuOps smsOps = SMSAhsuOps.createDefault(); // SMS
+
+                    org.json.JSONArray jsanNumbers = new org.json.JSONArray(sJSNumber); // Parse
+
+                    // PREPARE NUMBERS TO BE SENT
+                    // THE NUMBERS RECEVIED CAN BE LOT MORE BUT 
+                    // SERVER MAY REQUEST no of them to be sent
+                    //---------------------------------------------------------
+                    String sNumbers = "[";
+                    long nNumberofPhones = 0;
+                    
+                    for(int i=0;i<newSMSRequest.noOfNumbers2Sent;i++)
+                    {
+                        if(i!=0)
+                            sNumbers += ",";
+
+                        String phoneN = jsanNumbers.get(i).toString();
+                        sNumbers += phoneN;
+                        nNumberofPhones = i;
+                    }
+                    sNumbers += "]";
+
+                    org.json.JSONArray jsaFinalNumbers = new org.json.JSONArray(sNumbers); // Parse
+
+                    //GET MSGID (bura)
+                    
+                    java.util.List<SmsResponse> responses = smsOps.sendBulkSMS(jsaFinalNumbers, sContent);  // Sending SMS
+                    
+                    String sMsId = " ";
+                    
+                    if(responses != null && !responses.isEmpty())
+                    {
+                        sMsId = SMSAhsuOps.extractMessageId(responses.get(0));
+                    }
+                    if (newSMSRequest.userId == null || newSMSRequest.userId.trim().isEmpty()) 
+                    {
+                        newSMSRequest.userId = "0";
+                    }
+                    
+                    // WRITE LEDGER
+                    ssSMSCommon.write2Ledger(BigInteger.ZERO, BigInteger.ZERO, sContent);
+
+                    // update SMS CREDIT
+                    //ssSMSCommon.updateSMS4Sent(pem, new BigInteger(newSMSRequest.userId), nNumberofPhones);
+
+                    // add 2 sms history (msgId + no(#) of phones + datetime (bura)
+                    
+                    String sDateTime = Util.DateTime.GetDateTime_s("yyyyMMddHHmmssSSS");
+                    
+                    org.json.JSONObject jsHistory = new org.json.JSONObject();
+                    
+                    jsHistory.put("smsId", sMsId);
+                    jsHistory.put("noOfPhones", nNumberofPhones);
+                    jsHistory.put("datetime", sDateTime);
+                    LogManager.SysLog(0, "SMS History: " + jsHistory.toString());
+                    
+                    try 
+                    {
+                        String sqlHistory = "INSERT INTO ss_sms_history "
+                                          + "("
+                                            + "UID, "
+                                            + "SERVER_ID, "
+                                            + "STAT, "
+                                            + "INSERTDATE, "
+                                            + "LASTUPDATE, "
+                                            + "VERSION, "
+                                            + "BYUSER, "
+                                            + "USER_ID, "
+                                            + "ACCOUNT_ID, "
+                                            + "MSG_GROUP_ID, "
+                                            + "QUANTITY_SMS_SENT, "
+                                            + "QUANTITY_SMS_SENT_VERIFIED"
+                                            + ") "
+                                          + "VALUES "
+                                            + "("
+                                                + "?, "
+                                                + "1, "
+                                                + "1, "
+                                                + "?, "
+                                                + "?, "
+                                                + "0, "
+                                                + "'sys', "
+                                                + "?, "
+                                                + "?, "
+                                                + "?, "
+                                                + "?, "
+                                                + "0"
+                                            + ")";
+                        
+                        long now = Long.parseLong(Util.DateTime.GetDateTime_s("yyyyMMddHHmmss"));
+                        
+                        BigInteger historyUid = new BigInteger(Util.DateTime.GetDateTime_s("yyyyMMddHHmmssSSS"));
+                        
+                        BigInteger dbUserId   = (newSMSRequest.userId != null && !newSMSRequest.userId.trim().isEmpty()) 
+                                                ? new BigInteger(newSMSRequest.userId.trim()) 
+                                                : BigInteger.ZERO;
+                        
+                        BigInteger dbAccId    = (newSMSRequest.accId != null && !newSMSRequest.accId.trim().isEmpty()) 
+                                                ? new BigInteger(newSMSRequest.accId.trim()) 
+                                                : BigInteger.ZERO;
+                        
+                        BigInteger dbMsgId    = BigInteger.ZERO;
+                        if (sMsId != null && !sMsId.trim().isEmpty()) 
+                        {
+                            String numDigits = sMsId.trim().replaceAll("\\D+", "");
+                            
+                            if (!numDigits.isEmpty())
+                            {
+                                dbMsgId = new BigInteger(numDigits);
+                            }
+                        }
+                        
+                        Query qry = pem.CreateNativeQuery(sqlHistory);
+                        
+                        qry.SetParameter(1, historyUid,       "UID");
+                        qry.SetParameter(2, now,              "INSERTDATE");
+                        qry.SetParameter(3, now,              "LASTUPDATE");
+                        qry.SetParameter(4, dbUserId,         "USER_ID");
+                        qry.SetParameter(5, dbAccId,          "ACCOUNT_ID");
+                        qry.SetParameter(6, dbMsgId,          "MSG_GROUP_ID");
+                        qry.SetParameter(7, nNumberofPhones,  "QUANTITY_SMS_SENT");
+                        qry.executeUpdate();
+                        
+                        LogManager.SysLog(0, "SMS History Saved ---> UID: " + historyUid);
+                        
+                    } 
+                    catch (Exception e) 
+                    {
+                        LogManager.SysLog(-1, "DB SAVED FAILED " + e.getMessage());
+                    }
+                            
+                    //long credits = smsOps.getCredits();
+
+                    //java.util.List<String> originators = smsOps.getOriginators();
+
+                    //java.util.List<com.bulbullers.sms.DeliveryReport> reports = smsOps.getReport("8297311291");
+                    
+                }
+
                 // INFORM SSE
                 // ----------------------------------------------------------
                 // newFileResp.token = newFile.token;
