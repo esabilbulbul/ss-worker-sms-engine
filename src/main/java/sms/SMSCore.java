@@ -186,7 +186,7 @@ public class SMSCore implements jeiWorkerInterface {
                     ssSMSCommon.write2Ledger(BigInteger.ZERO, BigInteger.ZERO, sContent);
 
                     // update SMS CREDIT
-                    //ssSMSCommon.updateSMS4Sent(pem, new BigInteger(newSMSRequest.userId), nNumberofPhones);
+                    ssSMSCommon.updateSMS4Sent(pem, new BigInteger(newSMSRequest.userId), nNumberofPhones);
 
                     // add 2 sms history (msgId + no(#) of phones + datetime (bura)
                     
@@ -199,80 +199,10 @@ public class SMSCore implements jeiWorkerInterface {
                     jsHistory.put("datetime", sDateTime);
                     LogManager.SysLog(0, "SMS History: " + jsHistory.toString());
                     
-                    try 
-                    {
-                        String sqlHistory = "INSERT INTO ss_sms_history "
-                                          + "("
-                                            + "UID, "
-                                            + "SERVER_ID, "
-                                            + "STAT, "
-                                            + "INSERTDATE, "
-                                            + "LASTUPDATE, "
-                                            + "VERSION, "
-                                            + "BYUSER, "
-                                            + "USER_ID, "
-                                            + "ACCOUNT_ID, "
-                                            + "MSG_GROUP_ID, "
-                                            + "QUANTITY_SMS_SENT, "
-                                            + "QUANTITY_SMS_SENT_VERIFIED"
-                                            + ") "
-                                          + "VALUES "
-                                            + "("
-                                                + "?, "
-                                                + "1, "
-                                                + "1, "
-                                                + "?, "
-                                                + "?, "
-                                                + "0, "
-                                                + "'sys', "
-                                                + "?, "
-                                                + "?, "
-                                                + "?, "
-                                                + "?, "
-                                                + "0"
-                                            + ")";
-                        
-                        long now = Long.parseLong(Util.DateTime.GetDateTime_s("yyyyMMddHHmmss"));
-                        
-                        BigInteger historyUid = new BigInteger(Util.DateTime.GetDateTime_s("yyyyMMddHHmmssSSS"));
-                        
-                        BigInteger dbUserId   = (newSMSRequest.userId != null && !newSMSRequest.userId.trim().isEmpty()) 
-                                                ? new BigInteger(newSMSRequest.userId.trim()) 
-                                                : BigInteger.ZERO;
-                        
-                        BigInteger dbAccId    = (newSMSRequest.accId != null && !newSMSRequest.accId.trim().isEmpty()) 
-                                                ? new BigInteger(newSMSRequest.accId.trim()) 
-                                                : BigInteger.ZERO;
-                        
-                        BigInteger dbMsgId    = BigInteger.ZERO;
-                        if (sMsId != null && !sMsId.trim().isEmpty()) 
-                        {
-                            String numDigits = sMsId.trim().replaceAll("\\D+", "");
-                            
-                            if (!numDigits.isEmpty())
-                            {
-                                dbMsgId = new BigInteger(numDigits);
-                            }
-                        }
-                        
-                        Query qry = pem.CreateNativeQuery(sqlHistory);
-                        
-                        qry.SetParameter(1, historyUid,       "UID");
-                        qry.SetParameter(2, now,              "INSERTDATE");
-                        qry.SetParameter(3, now,              "LASTUPDATE");
-                        qry.SetParameter(4, dbUserId,         "USER_ID");
-                        qry.SetParameter(5, dbAccId,          "ACCOUNT_ID");
-                        qry.SetParameter(6, dbMsgId,          "MSG_GROUP_ID");
-                        qry.SetParameter(7, nNumberofPhones,  "QUANTITY_SMS_SENT");
-                        qry.executeUpdate();
-                        
-                        LogManager.SysLog(0, "SMS History Saved ---> UID: " + historyUid);
-                        
-                    } 
-                    catch (Exception e) 
-                    {
-                        LogManager.SysLog(-1, "DB SAVED FAILED " + e.getMessage());
-                    }
+                    // SAVE SMS HISTORY TO DATABASE
+                    // (If DB save fails, exception log is written to file inside the function)
+                    
+                    saveSMSHistory2DB(pem, newSMSRequest, sMsId, nNumberofPhones);
                             
                     //long credits = smsOps.getCredits();
 
@@ -311,6 +241,101 @@ public class SMSCore implements jeiWorkerInterface {
 
         return "";
     }
-
+    
+    private void saveSMSHistory2DB(EntityManager pem, ssoSMSRequest pSMSRequest, String pMsgId, long pNumberOfPhones)
+    {
+        try 
+        {
+            String sqlHistory = "INSERT INTO ss_sms_history_TEST  "
+                              + "("
+                                + "UID, "
+                                + "SERVER_ID, "
+                                + "STAT, "
+                                + "INSERTDATE, "
+                                + "LASTUPDATE, "
+                                + "VERSION, "
+                                + "BYUSER, "
+                                + "USER_ID, "
+                                + "ACCOUNT_ID, "
+                                + "MSG_GROUP_ID, "
+                                + "QUANTITY_SMS_SENT, "
+                                + "QUANTITY_SMS_SENT_VERIFIED"
+                                + ") "
+                              + "VALUES "
+                                + "("
+                                    + "?, "
+                                    + "1, "
+                                    + "1, "
+                                    + "?, "
+                                    + "?, "
+                                    + "0, "
+                                    + "'sys', "
+                                    + "?, "
+                                    + "?, "
+                                    + "?, "
+                                    + "?, "
+                                    + "0"
+                                + ")";
+            
+            long now = Long.parseLong(Util.DateTime.GetDateTime_s("yyyyMMddHHmmss"));
+            
+            BigInteger historyUid = new BigInteger(Util.DateTime.GetDateTime_s("yyyyMMddHHmmssSSS"));
+            
+            BigInteger dbUserId   = (pSMSRequest.userId != null && !pSMSRequest.userId.trim().isEmpty()) 
+                                    ? new BigInteger(pSMSRequest.userId.trim()) 
+                                    : BigInteger.ZERO;
+            
+            BigInteger dbAccId    = (pSMSRequest.accId != null && !pSMSRequest.accId.trim().isEmpty()) 
+                                    ? new BigInteger(pSMSRequest.accId.trim()) 
+                                    : BigInteger.ZERO;
+            
+            BigInteger dbMsgId    = BigInteger.ZERO;
+            if (pMsgId != null && !pMsgId.trim().isEmpty()) 
+            {
+                String numDigits = pMsgId.trim().replaceAll("\\D+", "");
+                
+                if (!numDigits.isEmpty())
+                {
+                    dbMsgId = new BigInteger(numDigits);
+                }
+            }
+            
+            Query qry = pem.CreateNativeQuery(sqlHistory);
+            
+            qry.SetParameter(1, historyUid,       "UID");
+            qry.SetParameter(2, now,              "INSERTDATE");
+            qry.SetParameter(3, now,              "LASTUPDATE");
+            qry.SetParameter(4, dbUserId,         "USER_ID");
+            qry.SetParameter(5, dbAccId,          "ACCOUNT_ID");
+            qry.SetParameter(6, dbMsgId,          "MSG_GROUP_ID");
+            qry.SetParameter(7, pNumberOfPhones,  "QUANTITY_SMS_SENT");
+            qry.executeUpdate();
+            
+            LogManager.SysLog(0, "SMS History Saved ---> UID: " + historyUid);
+            
+        } 
+        catch (Exception e) 
+        {
+            // Write exception log (file) because SMS sent but not saved to database.
+            // ssoSMSCreditExceptionLog
+            String sFileName  = ssSMSCommon.SMS_LEDGER_FILE_PATH + File.separator 
+                              + "ss_sms_credit_exception_" 
+                              + Util.DateTime.GetDateTime_s("yyMMddHHmm") 
+                              + ".log";
+            
+            ssoSMSCreditExceptionLog newCreditExceptionLog = new ssoSMSCreditExceptionLog();
+            newCreditExceptionLog.userId      = (pSMSRequest.userId != null) ? pSMSRequest.userId.trim() : "";
+            newCreditExceptionLog.accId       = (pSMSRequest.accId  != null) ? pSMSRequest.accId.trim()  : "";
+            newCreditExceptionLog.quantitySMS = String.valueOf(pNumberOfPhones);
+            newCreditExceptionLog.errDesc     = "dateTime: " + Util.DateTime.GetDateTime_s("yyyyMMddHHmmssSSS")
+                                              + " | msgId: " + ((pMsgId != null) ? pMsgId.trim() : "")
+                                              + " | error: " + e.getMessage();
+            
+            String sFileData = Util.JSON.toString(newCreditExceptionLog);
+            Util.Files.Write2File(sFileName, sFileData);
+            
+            LogManager.SysLog(-1, "DB SAVED FAILED " + e.getMessage());
+        }
+    }
  
 }
